@@ -11,8 +11,9 @@ import { Separator } from "@/components/ui/separator"
 import { FavoriteButton } from "@/components/favorite-button"
 import { WatchStatusButton } from "@/components/watch-status-button"
 import { CommentsSection } from "@/components/comments-section"
-import { getSession, createServerSupabaseClient } from "@/lib/supabase-server"
 import { ScrollableTabsList } from "@/components/scrollable-tabs"
+import { getComments } from "@/lib/firebase-db"
+import { getUserProfile } from "@/lib/firebase-auth"
 
 interface AnimePageProps {
   params: {
@@ -27,56 +28,50 @@ export default async function AnimePage({ params }: AnimePageProps) {
     return notFound()
   }
 
-  // Get current user
-  const session = await getSession()
-  const currentUser = session?.user || null
+  console.log("Anime page - fetching comments for ID:", animeId)
 
   // Fetch comments for this anime
-  const supabase = createServerSupabaseClient()
-
-  // First, fetch the comments
-  const { data: comments, error: commentsError } = await supabase
-    .from("comments")
-    .select("*")
-    .eq("anime_id", animeId)
-    .order("created_at", { ascending: false })
+  const { data: comments, error: commentsError } = await getComments(animeId)
 
   if (commentsError) {
     console.error("Error fetching comments:", commentsError)
   }
 
-  // Then, if we have comments, fetch the user profiles for those comments
+  console.log("Anime page - received comments:", comments?.length || 0)
+
+  // Fetch user profiles for comments
   let commentsWithProfiles = []
   if (comments && comments.length > 0) {
     // Get unique user IDs from comments
-    const userIds = [...new Set(comments.map((comment) => comment.user_id))]
+    const userIds = [...new Set(comments.map((comment) => comment.userId))]
+
+    console.log("Fetching profiles for user IDs:", userIds)
 
     // Fetch profiles for these users
-    const { data: profiles, error: profilesError } = await supabase
-      .from("profiles")
-      .select("id, username, avatar_url")
-      .in("id", userIds)
-
-    if (profilesError) {
-      console.error("Error fetching profiles:", profilesError)
-    }
+    const profiles = await Promise.all(userIds.map((userId) => getUserProfile(userId)))
 
     // Create a map of user IDs to profiles for quick lookup
     const profileMap = new Map()
-    if (profiles) {
-      profiles.forEach((profile) => {
-        profileMap.set(profile.id, profile)
-      })
-    }
+    profiles.forEach((profile) => {
+      if (profile) {
+        profileMap.set(profile.uid, {
+          id: profile.uid,
+          username: profile.username,
+          avatarUrl: profile.avatarUrl,
+        })
+      }
+    })
 
     // Combine comments with their author profiles
     commentsWithProfiles = comments.map((comment) => {
-      const profile = profileMap.get(comment.user_id)
+      const profile = profileMap.get(comment.userId)
       return {
         ...comment,
         profiles: profile || null,
       }
     })
+
+    console.log("Comments with profiles:", commentsWithProfiles.length)
   }
 
   try {
@@ -286,8 +281,8 @@ export default async function AnimePage({ params }: AnimePageProps) {
     // Add Gojo.wtf to external links
     const gojoLink = {
       id: 9999,
-      url: `https://gojo.wtf/anime/${animeId}`,
-      site: "Gojo.wtf",
+      url: `https://aniplaynow.live/anime/info/${animeId}`,
+      site: "Aniplaynow.live",
       type: "STREAMING",
       language: "English",
       color: null,
@@ -323,18 +318,10 @@ export default async function AnimePage({ params }: AnimePageProps) {
                 </div>
 
                 <div className="mt-4 space-y-3">
-                  {session && (
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <FavoriteButton anime={anime} />
-                      <WatchStatusButton anime={anime} />
-                    </div>
-                  )}
-
-                  {!session && (
-                    <Button asChild variant="outline" className="w-full">
-                      <Link href="/login">Login to add to favorites</Link>
-                    </Button>
-                  )}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <FavoriteButton anime={anime} />
+                    <WatchStatusButton anime={anime} />
+                  </div>
 
                   {anime.trailer && anime.trailer.site === "youtube" && (
                     <Button asChild variant="outline" className="w-full">
@@ -565,7 +552,6 @@ export default async function AnimePage({ params }: AnimePageProps) {
                                       recommendation.mediaRecommendation.coverImage.large ||
                                       "/placeholder.svg" ||
                                       "/placeholder.svg" ||
-                                      "/placeholder.svg" ||
                                       "/placeholder.svg"
                                     }
                                     alt={getAnimeTitle(recommendation.mediaRecommendation)}
@@ -770,7 +756,6 @@ export default async function AnimePage({ params }: AnimePageProps) {
                                             relation.node.coverImage.medium ||
                                             "/placeholder.svg" ||
                                             "/placeholder.svg" ||
-                                            "/placeholder.svg" ||
                                             "/placeholder.svg"
                                           }
                                           alt={getAnimeTitle(relation.node)}
@@ -816,7 +801,8 @@ export default async function AnimePage({ params }: AnimePageProps) {
                     <CommentsSection
                       animeId={animeId}
                       comments={commentsWithProfiles || []}
-                      currentUser={currentUser}
+                      currentUser={null}
+                      mediaType="anime"
                     />
                   </TabsContent>
                 </Tabs>

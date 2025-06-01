@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
@@ -10,7 +9,9 @@ import { Search, Menu, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { useSupabase } from "@/lib/supabase-provider"
+import { useFirebase } from "@/lib/firebase-provider"
+import { getUserProfile } from "@/lib/firebase-auth"
+import { logout } from "@/lib/firebase-auth"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -24,51 +25,23 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
 export default function Header() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [user, setUser] = useState<any>(null)
   const [userProfile, setUserProfile] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
   const pathname = usePathname()
   const router = useRouter()
-  const { supabase } = useSupabase()
+  const { user, loading } = useFirebase()
 
   useEffect(() => {
-    const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      setUser(user)
-
+    const fetchUserProfile = async () => {
       if (user) {
-        // Fetch user profile
-        const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
-
-        setUserProfile(profile)
-      }
-
-      setLoading(false)
-    }
-
-    getUser()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null)
-
-      if (session?.user) {
-        // Fetch user profile on auth state change
-        const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).single()
-
+        const profile = await getUserProfile(user.uid)
         setUserProfile(profile)
       } else {
         setUserProfile(null)
       }
-    })
-
-    return () => {
-      subscription.unsubscribe()
     }
-  }, [supabase])
+
+    fetchUserProfile()
+  }, [user])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -79,7 +52,7 @@ export default function Header() {
   }
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
+    await logout()
     router.push("/")
   }
 
@@ -91,9 +64,9 @@ export default function Header() {
     { name: "Popular", path: "/popular" },
   ]
 
-  // Get avatar URL from profile or user metadata
-  const avatarUrl = userProfile?.avatar_url || user?.user_metadata?.avatar_url || ""
-  const username = userProfile?.username || user?.user_metadata?.username || user?.email
+  // Get avatar URL from profile or user
+  const avatarUrl = userProfile?.avatarUrl || user?.photoURL || ""
+  const username = userProfile?.username || user?.displayName || user?.email
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">

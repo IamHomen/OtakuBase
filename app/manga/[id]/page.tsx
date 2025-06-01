@@ -10,8 +10,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { FavoriteButton } from "@/components/favorite-button"
 import { CommentsSection } from "@/components/comments-section"
-import { getSession, createServerSupabaseClient } from "@/lib/supabase-server"
 import { ScrollableTabsList } from "@/components/scrollable-tabs"
+import { getComments } from "@/lib/firebase-db"
+import { getUserProfile } from "@/lib/firebase-auth"
 
 interface MangaPageProps {
   params: {
@@ -26,56 +27,50 @@ export default async function MangaPage({ params }: MangaPageProps) {
     return notFound()
   }
 
-  // Get current user
-  const session = await getSession()
-  const currentUser = session?.user || null
+  console.log("Manga page - fetching comments for ID:", mangaId)
 
-  // Fetch comments for this manga
-  const supabase = createServerSupabaseClient()
-
-  // First, fetch the comments
-  const { data: comments, error: commentsError } = await supabase
-    .from("comments")
-    .select("*")
-    .eq("anime_id", mangaId)
-    .order("created_at", { ascending: false })
+  // Fetch comments for this manga (using mangaId, not animeId)
+  const { data: comments, error: commentsError } = await getComments(mangaId)
 
   if (commentsError) {
     console.error("Error fetching comments:", commentsError)
   }
 
-  // Then, if we have comments, fetch the user profiles for those comments
+  console.log("Manga page - received comments:", comments?.length || 0)
+
+  // Fetch user profiles for comments
   let commentsWithProfiles = []
   if (comments && comments.length > 0) {
     // Get unique user IDs from comments
-    const userIds = [...new Set(comments.map((comment) => comment.user_id))]
+    const userIds = [...new Set(comments.map((comment) => comment.userId))]
+
+    console.log("Fetching profiles for user IDs:", userIds)
 
     // Fetch profiles for these users
-    const { data: profiles, error: profilesError } = await supabase
-      .from("profiles")
-      .select("id, username, avatar_url")
-      .in("id", userIds)
-
-    if (profilesError) {
-      console.error("Error fetching profiles:", profilesError)
-    }
+    const profiles = await Promise.all(userIds.map((userId) => getUserProfile(userId)))
 
     // Create a map of user IDs to profiles for quick lookup
     const profileMap = new Map()
-    if (profiles) {
-      profiles.forEach((profile) => {
-        profileMap.set(profile.id, profile)
-      })
-    }
+    profiles.forEach((profile) => {
+      if (profile) {
+        profileMap.set(profile.uid, {
+          id: profile.uid,
+          username: profile.username,
+          avatarUrl: profile.avatarUrl,
+        })
+      }
+    })
 
     // Combine comments with their author profiles
     commentsWithProfiles = comments.map((comment) => {
-      const profile = profileMap.get(comment.user_id)
+      const profile = profileMap.get(comment.userId)
       return {
         ...comment,
         profiles: profile || null,
       }
     })
+
+    console.log("Comments with profiles:", commentsWithProfiles.length)
   }
 
   try {
@@ -285,17 +280,9 @@ export default async function MangaPage({ params }: MangaPageProps) {
                 </div>
 
                 <div className="mt-4 space-y-3">
-                  {session && (
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <FavoriteButton anime={manga} />
-                    </div>
-                  )}
-
-                  {!session && (
-                    <Button asChild variant="outline" className="w-full">
-                      <Link href="/login">Login to add to favorites</Link>
-                    </Button>
-                  )}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <FavoriteButton anime={manga} />
+                  </div>
 
                   <div className="space-y-2">
                     <h3 className="font-medium">Information</h3>
@@ -455,6 +442,7 @@ export default async function MangaPage({ params }: MangaPageProps) {
                                     src={
                                       recommendation.mediaRecommendation.coverImage.extraLarge ||
                                       recommendation.mediaRecommendation.coverImage.large ||
+                                      "/placeholder.svg" ||
                                       "/placeholder.svg" ||
                                       "/placeholder.svg" ||
                                       "/placeholder.svg"
@@ -679,6 +667,7 @@ export default async function MangaPage({ params }: MangaPageProps) {
                                             relation.node.coverImage.medium ||
                                             "/placeholder.svg" ||
                                             "/placeholder.svg" ||
+                                            "/placeholder.svg" ||
                                             "/placeholder.svg"
                                           }
                                           alt={getAnimeTitle(relation.node)}
@@ -724,7 +713,8 @@ export default async function MangaPage({ params }: MangaPageProps) {
                     <CommentsSection
                       animeId={mangaId}
                       comments={commentsWithProfiles || []}
-                      currentUser={currentUser}
+                      currentUser={null}
+                      mediaType="manga"
                     />
                   </TabsContent>
                 </Tabs>

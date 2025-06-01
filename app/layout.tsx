@@ -6,7 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import Header from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Toaster } from "@/components/ui/toaster"
-import { SupabaseProvider } from "@/lib/supabase-provider"
+import { FirebaseProvider } from "@/lib/firebase-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -23,8 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-    <head>
-        {/* ✅ Proper AdSense script here */}
+      <head>
         <script
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8426413261107551"
@@ -32,7 +31,7 @@ export default function RootLayout({
         ></script>
       </head>
       <body className={inter.className}>
-        <SupabaseProvider>
+        <FirebaseProvider>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
             <div className="flex min-h-screen flex-col">
               <Header />
@@ -41,7 +40,7 @@ export default function RootLayout({
             </div>
             <Toaster />
           </ThemeProvider>
-        </SupabaseProvider>
+        </FirebaseProvider>
       </body>
     </html>
   )
